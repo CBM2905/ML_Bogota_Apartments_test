@@ -1,509 +1,460 @@
 """
-Módulo de preprocesamiento mejorado para Bogotá Apartments
-Pipeline completo para preparación de datos para ML
+Módulo de Análisis Exploratorio de Datos (EDA) para Bogotá Apartments
+Análisis completo de variables originales sin transformaciones
 """
 
 import pandas as pd
 import numpy as np
-from scipy.stats import mstats
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
 import logging
-import re
+import warnings
+
+# Configuración
+warnings.filterwarnings('ignore')
+plt.style.use('seaborn-v0_8')
+sns.set_palette("husl")
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class BogotaApartmentsPreprocessor:
-    """Clase mejorada para preprocesamiento de datos inmobiliarios de Bogotá"""
+class BogotaApartmentsEDA:
+    """Clase para análisis exploratorio de datos de apartamentos en Bogotá"""
     
     def __init__(self):
-        self.original_shape = None
-        self.final_shape = None
-        self.scaler = StandardScaler()
-        self.minmax_scaler = MinMaxScaler()
+        self.df = None
+        self.original_columns = [
+            'precio_venta', 'area', 'habitaciones', 'banos', 'estrato', 
+            'parqueaderos', 'administracion', 'localidad', 'barrio', 'antiguedad'
+        ]
+        self.numeric_columns = []
+        self.categorical_columns = []
         
-        # Mapeo para antigüedad
-        self.antiguedad_map = {
-            'MENOS DE 1 ANO': 0.5,
-            'ENTRE 1 Y 5 ANOS': 3,
-            'ENTRE 0 Y 5 ANOS': 2.5,
-            'ENTRE 5 Y 10 ANOS': 7.5,
-            'ENTRE 10 Y 20 ANOS': 15,
-            'MAS DE 20 ANOS': 25,
-            'EN CONSTRUCCION': 0,
-            'ESTRENAR': 0
-        }
-    
-    def load_excel_data(self, file_path):
+    def load_data(self, file_path):
         """
-        Cargar datos desde archivo Excel con logging
+        Cargar datos desde archivo Excel
         
         Args:
             file_path (str): Ruta al archivo Excel
-            
-        Returns:
-            pd.DataFrame: DataFrame con los datos cargados
         """
         logger.info(f"📥 Cargando datos desde: {file_path}")
-        
         try:
-            df = pd.read_excel(file_path)
-            self.original_shape = df.shape
-            logger.info(f"✅ Datos cargados: {df.shape[0]} registros, {df.shape[1]} columnas")
-            return df
+            self.df = pd.read_excel(file_path)
+            logger.info(f"✅ Datos cargados: {self.df.shape[0]} registros, {self.df.shape[1]} columnas")
+            
+            # Filtrar solo columnas originales que existan en el dataset
+            available_columns = [col for col in self.original_columns if col in self.df.columns]
+            self.df = self.df[available_columns]
+            
+            # Clasificar columnas
+            self.numeric_columns = self.df.select_dtypes(include=[np.number]).columns.tolist()
+            self.categorical_columns = self.df.select_dtypes(include=['object']).columns.tolist()
+            
+            logger.info(f"📊 Columnas numéricas: {len(self.numeric_columns)}")
+            logger.info(f"📊 Columnas categóricas: {len(self.categorical_columns)}")
+            
         except Exception as e:
-            logger.error(f"❌ Error cargando Excel: {e}")
+            logger.error(f"❌ Error cargando datos: {e}")
             raise
     
-    def clean_numeric_columns(self, df):
-        """
-        Convertir columnas numéricas con comas a puntos y transformar a float
+    def dataset_overview(self):
+        """Resumen general del dataset"""
+        logger.info("📋 Generando resumen del dataset...")
         
-        Args:
-            df (pd.DataFrame): DataFrame original
-            
-        Returns:
-            pd.DataFrame: DataFrame con columnas numéricas limpias
-        """
-        logger.info("🔧 Limpiando columnas numéricas...")
-        df_clean = df.copy()
+        print("=" * 80)
+        print("📊 RESUMEN GENERAL DEL DATASET - BOGOTÁ APARTMENTS")
+        print("=" * 80)
         
-        # Identificar columnas numéricas potenciales
-        numeric_candidates = df_clean.select_dtypes(include=['object']).columns
+        # Información básica
+        print(f"📈 Dimensiones: {self.df.shape[0]} registros, {self.df.shape[1]} columnas")
+        print(f"💰 Variable objetivo: precio_venta")
+        print("\n")
         
-        for col in numeric_candidates:
-            # Verificar si la columna contiene números con comas
-            if df_clean[col].astype(str).str.contains(r'\d+,\d+', na=False).any():
-                try:
-                    # Convertir comas a puntos y luego a numérico
-                    df_clean[col] = (
-                        df_clean[col]
-                        .astype(str)
-                        .str.replace(',', '.', regex=False)
-                        .str.replace(r'[^\d.-]', '', regex=True)  # Remover caracteres no numéricos
-                    )
-                    df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
-                    logger.info(f"  ✅ Columna {col} convertida a numérica")
-                except Exception as e:
-                    logger.warning(f"  ⚠️ No se pudo convertir {col}: {e}")
+        # Tipos de datos
+        print("📝 TIPOS DE DATOS:")
+        print(self.df.dtypes)
+        print("\n")
         
-        return df_clean
+        return self.df.shape
     
-    def remove_useless_columns(self, df, threshold=0.5):
-        """
-        Eliminar columnas con más del threshold% de valores nulos
+    def missing_values_analysis(self):
+        """Análisis de valores faltantes"""
+        logger.info("🔍 Analizando valores faltantes...")
         
-        Args:
-            df (pd.DataFrame): DataFrame a limpiar
-            threshold (float): Umbral de nulos para eliminar (0.5 = 50%)
+        print("=" * 80)
+        print("🔍 ANÁLISIS DE VALORES FALTANTES")
+        print("=" * 80)
+        
+        missing_data = self.df.isnull().sum()
+        missing_percent = (missing_data / len(self.df)) * 100
+        
+        missing_df = pd.DataFrame({
+            'Columna': missing_data.index,
+            'Valores_Faltantes': missing_data.values,
+            'Porcentaje': missing_percent.values
+        })
+        
+        missing_df = missing_df[missing_df['Valores_Faltantes'] > 0].sort_values('Porcentaje', ascending=False)
+        
+        if len(missing_df) > 0:
+            print(missing_df.round(2))
             
-        Returns:
-            pd.DataFrame: DataFrame sin columnas inútiles
-        """
-        logger.info("🗑️ Eliminando columnas con muchos valores nulos...")
-        df_clean = df.copy()
-        
-        null_ratio = df_clean.isnull().sum() / len(df_clean)
-        columns_to_drop = null_ratio[null_ratio > threshold].index.tolist()
-        
-        if columns_to_drop:
-            df_clean = df_clean.drop(columns=columns_to_drop)
-            logger.info(f"  ✅ Columnas eliminadas: {columns_to_drop}")
-        else:
-            logger.info("  ℹ️ No se encontraron columnas con más del 50% de valores nulos")
-        
-        return df_clean
-    
-    def filter_valid_records(self, df):
-        """
-        Filtrar registros válidos según criterios específicos
-        
-        Args:
-            df (pd.DataFrame): DataFrame a filtrar
+            # Gráfico de valores faltantes
+            plt.figure(figsize=(12, 6))
+            missing_plot_data = missing_df[missing_df['Porcentaje'] > 0]
             
-        Returns:
-            pd.DataFrame: DataFrame filtrado
-        """
-        logger.info("🎯 Filtrando registros válidos...")
-        df_filtered = df.copy()
-        initial_count = len(df_filtered)
-        
-        # Aplicar filtros secuencialmente
-        filters_applied = 0
-        
-        if 'precio_venta' in df_filtered.columns:
-            mask = df_filtered['precio_venta'] > 0
-            df_filtered = df_filtered[mask]
-            filters_applied += 1
-            logger.info(f"  ✅ Filtro precio_venta > 0: {len(df_filtered)} registros")
-        
-        if 'area' in df_filtered.columns:
-            mask = df_filtered['area'] > 0
-            df_filtered = df_filtered[mask]
-            filters_applied += 1
-            logger.info(f"  ✅ Filtro area > 0: {len(df_filtered)} registros")
-        
-        if 'latitud' in df_filtered.columns:
-            mask = df_filtered['latitud'].between(4.4, 4.9)
-            df_filtered = df_filtered[mask]
-            filters_applied += 1
-            logger.info(f"  ✅ Filtro latitud [4.4, 4.9]: {len(df_filtered)} registros")
-        
-        if 'longitud' in df_filtered.columns:
-            mask = df_filtered['longitud'].between(-74.3, -74.0)
-            df_filtered = df_filtered[mask]
-            filters_applied += 1
-            logger.info(f"  ✅ Filtro longitud [-74.3, -74.0]: {len(df_filtered)} registros")
-        
-        final_count = len(df_filtered)
-        retention_rate = (final_count / initial_count) * 100
-        logger.info(f"📊 Retención después de filtrado: {final_count}/{initial_count} ({retention_rate:.1f}%)")
-        
-        return df_filtered
-    
-    def impute_missing_values(self, df):
-        """
-        Imputar valores faltantes según tipo de variable
-        
-        Args:
-            df (pd.DataFrame): DataFrame con valores faltantes
-            
-        Returns:
-            pd.DataFrame: DataFrame sin valores faltantes
-        """
-        logger.info("🔄 Imputando valores faltantes...")
-        df_imputed = df.copy()
-        
-        # Separar columnas numéricas y categóricas
-        numeric_cols = df_imputed.select_dtypes(include=[np.number]).columns
-        categorical_cols = df_imputed.select_dtypes(include=['object']).columns
-        
-        # Imputar numéricas con mediana
-        for col in numeric_cols:
-            if df_imputed[col].isnull().any():
-                median_val = df_imputed[col].median()
-                df_imputed[col] = df_imputed[col].fillna(median_val)
-                logger.info(f"  ✅ Numérica {col}: imputado con mediana {median_val:.2f}")
-        
-        # Imputar categóricas con moda o "DESCONOCIDO"
-        for col in categorical_cols:
-            if df_imputed[col].isnull().any():
-                if df_imputed[col].notna().any():  # Si hay al menos un valor no nulo
-                    mode_val = df_imputed[col].mode()[0] if not df_imputed[col].mode().empty else "DESCONOCIDO"
-                    df_imputed[col] = df_imputed[col].fillna(mode_val)
-                    logger.info(f"  ✅ Categórica {col}: imputado con moda '{mode_val}'")
-                else:  # Si toda la columna es nula
-                    df_imputed[col] = df_imputed[col].fillna("DESCONOCIDO")
-                    logger.info(f"  ✅ Categórica {col}: imputado con 'DESCONOCIDO'")
-        
-        remaining_nulls = df_imputed.isnull().sum().sum()
-        if remaining_nulls == 0:
-            logger.info("✅ Todos los valores faltantes han sido imputados")
-        else:
-            logger.warning(f"⚠️ Aún quedan {remaining_nulls} valores nulos")
-        
-        return df_imputed
-    
-    def transform_skewed_variables(self, df):
-        """
-        Aplicar transformación log1p a variables sesgadas
-        
-        Args:
-            df (pd.DataFrame): DataFrame con variables sesgadas
-            
-        Returns:
-            pd.DataFrame: DataFrame con variables transformadas
-        """
-        logger.info("📈 Transformando variables sesgadas con log1p...")
-        df_transformed = df.copy()
-        
-        skewed_vars = ['precio_venta', 'area', 'administracion', 'precio_arriendo']
-        
-        for var in skewed_vars:
-            if var in df_transformed.columns:
-                # Verificar que no haya valores negativos antes de aplicar log
-                if (df_transformed[var] < 0).any():
-                    logger.warning(f"  ⚠️ {var} tiene valores negativos, ajustando...")
-                    min_val = df_transformed[var].min()
-                    if min_val < 0:
-                        df_transformed[var] = df_transformed[var] - min_val + 1
+            if len(missing_plot_data) > 0:
+                bars = plt.bar(missing_plot_data['Columna'], missing_plot_data['Porcentaje'], 
+                              color='salmon', alpha=0.7)
+                plt.title('Porcentaje de Valores Faltantes por Columna', fontsize=14, fontweight='bold')
+                plt.xlabel('Columnas')
+                plt.ylabel('Porcentaje de Valores Faltantes (%)')
+                plt.xticks(rotation=45)
                 
-                df_transformed[f'log_{var}'] = np.log1p(df_transformed[var])
-                logger.info(f"  ✅ {var} transformado a log_{var}")
+                # Añadir etiquetas en las barras
+                for bar in bars:
+                    height = bar.get_height()
+                    plt.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                            f'{height:.1f}%', ha='center', va='bottom')
+                
+                plt.tight_layout()
+                plt.show()
+        else:
+            print("✅ No hay valores faltantes en el dataset")
         
-        return df_transformed
+        print("\n")
+        return missing_df
     
-    def handle_outliers(self, df):
-        """
-        Aplicar winsorization a variables con outliers
+    def numeric_descriptive_stats(self):
+        """Estadísticas descriptivas para variables numéricas"""
+        logger.info("📈 Calculando estadísticas descriptivas numéricas...")
         
-        Args:
-            df (pd.DataFrame): DataFrame con outliers
+        print("=" * 80)
+        print("📊 ESTADÍSTICAS DESCRIPTIVAS - VARIABLES NUMÉRICAS")
+        print("=" * 80)
+        
+        if self.numeric_columns:
+            stats_df = self.df[self.numeric_columns].describe(percentiles=[.25, .5, .75, .95]).T
+            stats_df['cv'] = (stats_df['std'] / stats_df['mean']) * 100  # Coeficiente de variación
+            stats_df['skew'] = self.df[self.numeric_columns].skew()
+            stats_df['kurtosis'] = self.df[self.numeric_columns].kurtosis()
             
-        Returns:
-            pd.DataFrame: DataFrame con outliers tratados
-        """
-        logger.info("📊 Manejo de outliers con winsorization...")
-        df_clean = df.copy()
-        
-        # Winsorize precio_venta
-        if 'precio_venta' in df_clean.columns:
-            df_clean['precio_venta'] = mstats.winsorize(
-                df_clean['precio_venta'], limits=[0.01, 0.01]
-            )
-            logger.info("  ✅ precio_venta winsorizado (1%-99%)")
-        
-        # Winsorize precio_m2 si existe
-        if 'precio_m2' in df_clean.columns:
-            df_clean['precio_m2'] = mstats.winsorize(
-                df_clean['precio_m2'], limits=[0.01, 0.01]
-            )
-            logger.info("  ✅ precio_m2 winsorizado (1%-99%)")
-        
-        return df_clean
+            # Formatear para mejor presentación
+            formatted_stats = stats_df.round(2)
+            print(formatted_stats)
+            print("\n")
+            
+            return stats_df
+        else:
+            print("❌ No hay variables numéricas para analizar")
+            return pd.DataFrame()
     
-    def preprocess_antiguedad(self, df):
-        """
-        Convertir categorías de antigüedad a valores numéricos
+    def numeric_distribution_analysis(self):
+        """Análisis de distribución y outliers para variables numéricas"""
+        logger.info("📊 Analizando distribuciones numéricas...")
         
-        Args:
-            df (pd.DataFrame): DataFrame con columna antiguedad
-            
-        Returns:
-            pd.DataFrame: DataFrame con antiguedad numérica
-        """
-        logger.info("🕒 Preprocesando antigüedad...")
-        df_processed = df.copy()
+        if not self.numeric_columns:
+            logger.warning("⚠️ No hay variables numéricas para analizar")
+            return
         
-        if 'antiguedad' in df_processed.columns:
-            # Mapear categorías a valores numéricos
-            df_processed['antiguedad_num'] = (
-                df_processed['antiguedad']
-                .str.upper()
-                .map(self.antiguedad_map)
-            )
-            
-            # Imputar valores no mapeados con la mediana
-            median_antiguedad = df_processed['antiguedad_num'].median()
-            df_processed['antiguedad_num'] = df_processed['antiguedad_num'].fillna(median_antiguedad)
-            
-            logger.info(f"  ✅ Antigüedad convertida a numérica (mediana: {median_antiguedad})")
+        print("=" * 80)
+        print("📊 ANÁLISIS DE DISTRIBUCIÓN - VARIABLES NUMÉRICAS")
+        print("=" * 80)
         
-        return df_processed
+        n_numeric = len(self.numeric_columns)
+        n_cols = 3
+        n_rows = (n_numeric + n_cols - 1) // n_cols
+        
+        # Crear subplots para histogramas y boxplots
+        fig, axes = plt.subplots(n_rows * 2, n_cols, figsize=(18, n_rows * 8))
+        axes = axes.flatten()
+        
+        outlier_counts_iqr = {}
+        outlier_counts_zscore = {}
+        
+        for i, col in enumerate(self.numeric_columns):
+            # Histograma
+            ax_hist = axes[i * 2]
+            self.df[col].hist(bins=30, ax=ax_hist, color='skyblue', alpha=0.7, edgecolor='black')
+            ax_hist.set_title(f'Distribución de {col}', fontweight='bold')
+            ax_hist.set_xlabel(col)
+            ax_hist.set_ylabel('Frecuencia')
+            
+            # Añadir líneas de media y mediana
+            mean_val = self.df[col].mean()
+            median_val = self.df[col].median()
+            ax_hist.axvline(mean_val, color='red', linestyle='--', linewidth=2, label=f'Media: {mean_val:.2f}')
+            ax_hist.axvline(median_val, color='green', linestyle='--', linewidth=2, label=f'Mediana: {median_val:.2f}')
+            ax_hist.legend()
+            
+            # Boxplot
+            ax_box = axes[i * 2 + 1]
+            self.df.boxplot(column=col, ax=ax_box, color='lightgreen')
+            ax_box.set_title(f'Boxplot de {col}', fontweight='bold')
+            
+            # Detección de outliers
+            Q1 = self.df[col].quantile(0.25)
+            Q3 = self.df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            outliers_iqr = self.df[(self.df[col] < lower_bound) | (self.df[col] > upper_bound)]
+            outlier_counts_iqr[col] = len(outliers_iqr)
+            
+            # Outliers por z-score (abs(z) > 3)
+            z_scores = np.abs(stats.zscore(self.df[col].dropna()))
+            outliers_zscore = self.df[z_scores > 3]
+            outlier_counts_zscore[col] = len(outliers_zscore)
+            
+            print(f"📌 {col}:")
+            print(f"   - Outliers (IQR): {outlier_counts_iqr[col]} ({outlier_counts_iqr[col]/len(self.df)*100:.1f}%)")
+            print(f"   - Outliers (Z-score > 3): {outlier_counts_zscore[col]} ({outlier_counts_zscore[col]/len(self.df)*100:.1f}%)")
+        
+        # Ocultar ejes vacíos
+        for j in range(len(self.numeric_columns) * 2, len(axes)):
+            axes[j].set_visible(False)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # Resumen de outliers
+        print("\n📌 RESUMEN DE OUTLIERS:")
+        outlier_summary = pd.DataFrame({
+            'Variable': list(outlier_counts_iqr.keys()),
+            'Outliers_IQR': list(outlier_counts_iqr.values()),
+            'Porcentaje_IQR': [f"{(count/len(self.df))*100:.1f}%" for count in outlier_counts_iqr.values()],
+            'Outliers_ZScore': list(outlier_counts_zscore.values()),
+            'Porcentaje_ZScore': [f"{(count/len(self.df))*100:.1f}%" for count in outlier_counts_zscore.values()]
+        })
+        print(outlier_summary)
+        
+        return outlier_counts_iqr, outlier_counts_zscore
     
-    def create_features(self, df):
-        """
-        Ingeniería de características avanzada
+    def correlation_analysis(self):
+        """Análisis de correlación entre variables numéricas"""
+        logger.info("🔗 Analizando correlaciones...")
         
-        Args:
-            df (pd.DataFrame): DataFrame base
-            
-        Returns:
-            pd.DataFrame: DataFrame con nuevas características
-        """
-        logger.info("🛠️ Creando características de ingeniería...")
-        df_enhanced = df.copy()
+        if len(self.numeric_columns) < 2:
+            logger.warning("⚠️ No hay suficientes variables numéricas para análisis de correlación")
+            return
         
-        # 1. Precio por m2
-        if all(col in df_enhanced.columns for col in ['precio_venta', 'area']):
-            df_enhanced['precio_m2'] = df_enhanced['precio_venta'] / df_enhanced['area']
-            logger.info("  ✅ precio_m2 creado")
+        print("=" * 80)
+        print("🔗 ANÁLISIS DE CORRELACIÓN")
+        print("=" * 80)
         
-        # 2. Score de amenities
-        amenities_pattern = r'jacuzzi|gimnasio|ascensor|conjunto_cerrado|piscina|salon_comunal|terraza|vigilancia|chimenea|mascotas'
-        amenities_cols = [col for col in df_enhanced.columns if re.search(amenities_pattern, col, re.IGNORECASE)]
+        # Matriz de correlación
+        correlation_matrix = self.df[self.numeric_columns].corr()
         
-        if amenities_cols:
-            # Convertir a binario y sumar
-            for col in amenities_cols:
-                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0)
-            
-            df_enhanced['amenities_score'] = df_enhanced[amenities_cols].sum(axis=1)
-            logger.info(f"  ✅ amenities_score creado con {len(amenities_cols)} amenities")
+        # Mostrar matriz numérica
+        print("Matriz de Correlación:")
+        print(correlation_matrix.round(3))
+        print("\n")
         
-        # 3. Ratios de densidad
-        if 'area' in df_enhanced.columns:
-            if 'banos' in df_enhanced.columns:
-                df_enhanced['banos_por_area'] = df_enhanced['banos'] / df_enhanced['area']
-            
-            if 'habitaciones' in df_enhanced.columns:
-                df_enhanced['habitaciones_por_area'] = df_enhanced['habitaciones'] / df_enhanced['area']
-            
-            if 'parqueaderos' in df_enhanced.columns:
-                df_enhanced['parqueaderos_por_area'] = df_enhanced['parqueaderos'] / df_enhanced['area']
-            
-            logger.info("  ✅ Ratios por área creados")
+        # Heatmap de correlación
+        plt.figure(figsize=(12, 10))
+        mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
         
-        # 4. Indicadores de lujo
-        if all(col in df_enhanced.columns for col in ['precio_m2', 'localidad']):
-            # Calcular mediana de precio_m2 por localidad
-            mediana_localidad = df_enhanced.groupby('localidad')['precio_m2'].transform('median')
-            df_enhanced['indicador_lujo'] = (df_enhanced['precio_m2'] > mediana_localidad).astype(int)
-            logger.info("  ✅ Indicador de lujo creado")
+        sns.heatmap(correlation_matrix, 
+                   mask=mask,
+                   annot=True, 
+                   cmap='coolwarm', 
+                   center=0,
+                   square=True,
+                   fmt='.3f',
+                   cbar_kws={'shrink': .8})
         
-        # 5. Estrato + localidad
-        if all(col in df_enhanced.columns for col in ['estrato', 'localidad']):
-            df_enhanced['estrato_localidad'] = (
-                df_enhanced['estrato'].astype(str) + "_" + df_enhanced['localidad']
-            )
-            logger.info("  ✅ estrato_localidad creado")
+        plt.title('Matriz de Correlación - Variables Numéricas', fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        plt.show()
         
-        return df_enhanced
+        # Correlaciones fuertes con precio_venta
+        if 'precio_venta' in self.numeric_columns:
+            price_correlations = correlation_matrix['precio_venta'].sort_values(ascending=False)
+            print("🔗 CORRELACIONES CON PRECIO_VENTA:")
+            for var, corr in price_correlations.items():
+                if var != 'precio_venta':
+                    strength = "FUERTE" if abs(corr) > 0.5 else "MODERADA" if abs(corr) > 0.3 else "DÉBIL"
+                    print(f"   {var}: {corr:.3f} ({strength})")
+        
+        return correlation_matrix
     
-    def encode_categorical_variables(self, df):
-        """
-        Codificar variables categóricas (one-hot y target encoding)
+    def categorical_analysis(self):
+        """Análisis de variables categóricas"""
+        logger.info("📊 Analizando variables categóricas...")
         
-        Args:
-            df (pd.DataFrame): DataFrame con variables categóricas
+        if not self.categorical_columns:
+            logger.warning("⚠️ No hay variables categóricas para analizar")
+            return
+        
+        print("=" * 80)
+        print("📊 ANÁLISIS DE VARIABLES CATEGÓRICAS")
+        print("=" * 80)
+        
+        categorical_stats = {}
+        
+        for col in self.categorical_columns:
+            print(f"\n📌 ANÁLISIS DE: {col.upper()}")
+            print("-" * 40)
             
-        Returns:
-            pd.DataFrame: DataFrame con variables codificadas
-        """
-        logger.info("🔠 Codificando variables categóricas...")
-        df_encoded = df.copy()
+            # Estadísticas básicas
+            n_categories = self.df[col].nunique()
+            n_missing = self.df[col].isnull().sum()
+            value_counts = self.df[col].value_counts()
+            
+            print(f"Categorías únicas: {n_categories}")
+            print(f"Valores faltantes: {n_missing}")
+            print(f"Top 5 categorías más frecuentes:")
+            
+            # Top 5 categorías
+            top_5 = value_counts.head(5)
+            for category, count in top_5.items():
+                percentage = (count / len(self.df)) * 100
+                print(f"   - {category}: {count} ({percentage:.1f}%)")
+            
+            # Precio promedio por categoría (si existe precio_venta)
+            if 'precio_venta' in self.df.columns:
+                price_by_category = self.df.groupby(col)['precio_venta'].agg(['mean', 'median', 'count'])
+                price_by_category = price_by_category.sort_values('mean', ascending=False)
+                
+                print(f"\n💰 Precio promedio por {col}:")
+                top_5_prices = price_by_category.head(5)
+                for category, row in top_5_prices.iterrows():
+                    print(f"   - {category}: ${row['mean']:,.0f} (mediana: ${row['median']:,.0f}, n={row['count']})")
+            
+            categorical_stats[col] = {
+                'n_categories': n_categories,
+                'n_missing': n_missing,
+                'value_counts': value_counts
+            }
         
-        # Agrupar localidades minoritarias
-        if 'localidad' in df_encoded.columns:
-            localidad_counts = df_encoded['localidad'].value_counts()
-            minor_localidades = localidad_counts[localidad_counts < 10].index
-            df_encoded['localidad'] = df_encoded['localidad'].replace(minor_localidades, 'OTROS')
-            logger.info(f"  ✅ Localidades agrupadas: {len(minor_localidades)} en 'OTROS'")
+        # Visualización de variables categóricas
+        n_categorical = len(self.categorical_columns)
+        if n_categorical > 0:
+            n_cols = 2
+            n_rows = (n_categorical + n_cols - 1) // n_cols
+            
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, n_rows * 6))
+            if n_categorical == 1:
+                axes = [axes]
+            else:
+                axes = axes.flatten()
+            
+            for i, col in enumerate(self.categorical_columns):
+                if i < len(axes):
+                    # Tomar top 10 categorías para visualización
+                    top_categories = self.df[col].value_counts().head(10)
+                    
+                    if len(top_categories) > 0:
+                        bars = axes[i].bar(top_categories.index.astype(str), top_categories.values, 
+                                         color='lightcoral', alpha=0.7)
+                        axes[i].set_title(f'Distribución de {col}', fontweight='bold')
+                        axes[i].set_xlabel(col)
+                        axes[i].set_ylabel('Frecuencia')
+                        axes[i].tick_params(axis='x', rotation=45)
+                        
+                        # Añadir etiquetas en las barras
+                        for bar in bars:
+                            height = bar.get_height()
+                            axes[i].text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                                       f'{height}', ha='center', va='bottom', fontsize=8)
+            
+            # Ocultar ejes vacíos
+            for j in range(len(self.categorical_columns), len(axes)):
+                axes[j].set_visible(False)
+            
+            plt.tight_layout()
+            plt.show()
         
-        # One-hot encoding para variables con pocas categorías
-        low_cardinality_vars = []
-        for col in df_encoded.select_dtypes(include=['object']).columns:
-            if df_encoded[col].nunique() <= 10:
-                low_cardinality_vars.append(col)
-        
-        if low_cardinality_vars:
-            df_encoded = pd.get_dummies(df_encoded, columns=low_cardinality_vars, prefix=low_cardinality_vars)
-            logger.info(f"  ✅ One-hot encoding aplicado a: {low_cardinality_vars}")
-        
-        # Para variables de alta cardinalidad, usar frecuencia encoding
-        high_cardinality_vars = ['barrio']  # Ejemplo
-        for col in high_cardinality_vars:
-            if col in df_encoded.columns:
-                freq_encoding = df_encoded[col].value_counts(normalize=True)
-                df_encoded[f'{col}_freq_encoded'] = df_encoded[col].map(freq_encoding)
-                logger.info(f"  ✅ Frecuencia encoding aplicado a: {col}")
-        
-        return df_encoded
+        return categorical_stats
     
-    def scale_numeric_variables(self, df):
-        """
-        Escalar variables numéricas para ML
+    def price_analysis_by_category(self):
+        """Análisis detallado de precios por categorías"""
+        logger.info("💰 Analizando precios por categorías...")
         
-        Args:
-            df (pd.DataFrame): DataFrame con variables numéricas
-            
-        Returns:
-            pd.DataFrame: DataFrame con variables escaladas
-        """
-        logger.info("⚖️ Escalando variables numéricas...")
-        df_scaled = df.copy()
+        if 'precio_venta' not in self.df.columns or not self.categorical_columns:
+            return
         
-        # Identificar columnas numéricas (excluyendo las que ya fueron transformadas)
-        numeric_cols = df_scaled.select_dtypes(include=[np.number]).columns
+        print("=" * 80)
+        print("💰 ANÁLISIS DE PRECIOS POR CATEGORÍAS")
+        print("=" * 80)
         
-        # Excluir columnas que ya están en escala logarítmica o son binarias
-        exclude_patterns = ['log_', '_encoded', 'indicador_', 'dummy_']
-        cols_to_scale = [
-            col for col in numeric_cols 
-            if not any(pattern in col for pattern in exclude_patterns)
-            and df_scaled[col].nunique() > 2  # Excluir variables binarias
-        ]
-        
-        if cols_to_scale:
-            # Aplicar StandardScaler
-            scaled_values = self.scaler.fit_transform(df_scaled[cols_to_scale])
-            df_scaled[cols_to_scale] = scaled_values
-            
-            # Crear nombres para las columnas escaladas
-            scaled_cols = [f'scaled_{col}' for col in cols_to_scale]
-            df_scaled[scaled_cols] = scaled_values
-            
-            logger.info(f"  ✅ {len(cols_to_scale)} variables escaladas con StandardScaler")
-        
-        return df_scaled
+        for col in self.categorical_columns:
+            if self.df[col].nunique() <= 15:  # Solo para variables con pocas categorías
+                print(f"\n📊 PRECIOS POR {col.upper()}:")
+                
+                price_stats = self.df.groupby(col)['precio_venta'].agg([
+                    'count', 'mean', 'median', 'std', 'min', 'max'
+                ]).round(0).sort_values('mean', ascending=False)
+                
+                print(price_stats)
+                
+                # Boxplot de precios por categoría
+                plt.figure(figsize=(12, 6))
+                order = price_stats.index.tolist()
+                sns.boxplot(data=self.df, x=col, y='precio_venta', order=order)
+                plt.title(f'Distribución de Precios por {col}', fontweight='bold')
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                plt.show()
     
-    def run_complete_pipeline(self, file_path):
+    def generate_complete_report(self, file_path):
         """
-        Ejecutar pipeline completo de preprocesamiento
+        Generar reporte completo de EDA
         
         Args:
             file_path (str): Ruta al archivo Excel
-            
-        Returns:
-            pd.DataFrame: DataFrame preprocesado listo para ML
         """
-        logger.info("🚀 INICIANDO PIPELINE COMPLETO DE PREPROCESAMIENTO")
+        logger.info("🚀 INICIANDO REPORTE COMPLETO DE EDA")
         
         try:
-            # 1. Carga de datos
-            df = self.load_excel_data(file_path)
+            # 1. Cargar datos
+            self.load_data(file_path)
             
-            # 2. Limpieza de columnas numéricas
-            df = self.clean_numeric_columns(df)
+            # 2. Resumen general
+            self.dataset_overview()
             
-            # 3. Eliminación de columnas inútiles
-            df = self.remove_useless_columns(df)
+            # 3. Análisis de valores faltantes
+            self.missing_values_analysis()
             
-            # 4. Filtrado de registros válidos
-            df = self.filter_valid_records(df)
+            # 4. Estadísticas descriptivas numéricas
+            self.numeric_descriptive_stats()
             
-            # 5. Imputación de valores faltantes
-            df = self.impute_missing_values(df)
+            # 5. Análisis de distribución y outliers
+            self.numeric_distribution_analysis()
             
-            # 6. Transformación de variables sesgadas
-            df = self.transform_skewed_variables(df)
+            # 6. Análisis de correlación
+            self.correlation_analysis()
             
-            # 7. Manejo de outliers
-            df = self.handle_outliers(df)
+            # 7. Análisis categórico
+            self.categorical_analysis()
             
-            # 8. Preprocesamiento de antigüedad
-            df = self.preprocess_antiguedad(df)
+            # 8. Análisis de precios por categoría
+            self.price_analysis_by_category()
             
-            # 9. Ingeniería de características
-            df = self.create_features(df)
-            
-            # 10. Codificación de variables categóricas
-            df = self.encode_categorical_variables(df)
-            
-            # 11. Escalado de variables numéricas
-            df = self.scale_numeric_variables(df)
-            
-            self.final_shape = df.shape
-            logger.info(f"🎉 PIPELINE COMPLETADO EXITOSAMENTE")
-            logger.info(f"📊 RESUMEN: {self.original_shape[0]} → {self.final_shape[0]} registros")
-            logger.info(f"📊 RESUMEN: {self.original_shape[1]} → {self.final_shape[1]} columnas")
-            
-            return df
+            logger.info("🎉 REPORTE DE EDA COMPLETADO EXITOSAMENTE")
             
         except Exception as e:
-            logger.error(f"❌ Error en el pipeline: {e}")
+            logger.error(f"❌ Error en el reporte EDA: {e}")
             raise
 
 # Función de conveniencia para uso rápido
-def preprocess_bogota_apartments(file_path):
+def generate_eda_report(file_path):
     """
-    Función simple para ejecutar el pipeline completo
+    Función simple para generar reporte EDA completo
     
     Args:
         file_path (str): Ruta al archivo Excel
-        
-    Returns:
-        pd.DataFrame: DataFrame preprocesado
     """
-    processor = BogotaApartmentsPreprocessor()
-    return processor.run_complete_pipeline(file_path)
+    eda = BogotaApartmentsEDA()
+    eda.generate_complete_report(file_path)
 
 if __name__ == "__main__":
     # Ejemplo de uso
     sample_file = "bogota_apartments.xlsx"
     try:
-        processed_data = preprocess_bogota_apartments(sample_file)
-        print(f"✅ Datos preprocesados: {processed_data.shape}")
+        generate_eda_report(sample_file)
     except Exception as e:
         print(f"❌ Error: {e}")
