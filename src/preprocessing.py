@@ -3,8 +3,8 @@
 # %% [markdown]
 # ## 🔧 MÓDULO: preprocessing.py
 
-# %% [markdown]
-# ## 🔧 MÓDULO: preprocessing.py
+# %%
+
 
 """
 Módulo de preprocesamiento para Bogotá Apartments
