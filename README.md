@@ -1,4 +1,4 @@
-## ML_Bogota_Apartments_test — README (en español)
+## ML_Bogota_Apartments_test — README
 
 ## Resumen rápido
 Proyecto de Machine Learning para análisis y modelado de precios / oportunidades de apartamentos en Bogotá. Contiene scripts para EDA, preprocesamiento, ingeniería de características, pipeline de entrenamiento/validación, y módulos para generar oportunidades/insights.
