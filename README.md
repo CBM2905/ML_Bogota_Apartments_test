@@ -54,6 +54,3 @@ A continuación explico el pipeline de extremo a extremo y qué archivo(s) imple
 8. Resultados y reporting
 	- Archivos/Carpetas: `results/`, notebooks para reporte.
 	- Qué hace: guardar métricas, gráficos y CSVs listos para análisis o dashboards.
-
-isarlo/editarlo primero?
-
